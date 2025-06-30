@@ -206,7 +206,7 @@ public class BridgeService extends Service {
     }
     
     public void disconnect() {
-        shouldReconnect = false;
+        // Do not set shouldReconnect to false here. It should only be set to false if auto-reconnect is explicitly stopped.
         reconnectHandler.removeCallbacks(reconnectRunnable);
         
         if (bluetoothGatt != null) {
@@ -291,14 +291,27 @@ public class BridgeService extends Service {
                     controlPointChar = ancsService.getCharacteristic(UUID.fromString(CHAR_CONTROL_POINT));
                     dataSourceChar = ancsService.getCharacteristic(UUID.fromString(CHAR_DATA_SOURCE));
                     
-                    // 按照ANCS规范，先启用 Data Source 通知
-                    setNotificationEnabled(dataSourceChar);
-                    
-                    updateNotification("ANCS 服务已就绪");
+                    // Check if all essential characteristics are found
+                    if (notificationSourceChar != null && controlPointChar != null && dataSourceChar != null) {
+                        // 按照ANCS规范，先启用 Data Source 通知
+                        setNotificationEnabled(dataSourceChar);
+                        updateNotification("ANCS 服务已就绪");
+                    } else {
+                        Log.e(TAG, "One or more ANCS characteristics not found.");
+                        updateNotification("ANCS 特性缺失");
+                        // Disconnect to trigger a full reconnection attempt.
+                        disconnect();
+                    }
                 } else {
-                    Log.e(TAG, "ANCS service not found");
+                    Log.e(TAG, "ANCS service not found.");
                     updateNotification("未找到 ANCS 服务");
+                    // Disconnect to trigger a full reconnection attempt.
+                    disconnect();
                 }
+            } else {
+                Log.e(TAG, "Service discovery failed with status: " + status);
+                // Disconnect to trigger a full reconnection attempt.
+                disconnect();
             }
         }
         
@@ -316,6 +329,10 @@ public class BridgeService extends Service {
                         serviceCallback.onServiceReady();
                     }
                 }
+            } else {
+                Log.e(TAG, "Descriptor write failed with status: " + status);
+                // Disconnect to trigger a full reconnection attempt.
+                disconnect();
             }
         }
         

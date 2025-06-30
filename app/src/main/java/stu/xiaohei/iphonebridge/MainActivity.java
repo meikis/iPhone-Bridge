@@ -51,6 +51,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "iPhoneBridge";
     private static final String PREFS_NAME = "iPhoneBridgePrefs";
@@ -170,6 +173,7 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         updateStatus(connected ? "已连接" : "已断开");
                         mConnectButton.setText(connected ? "断开连接" : "连接设备");
+                        mAutoConnectButton.setEnabled(true); // Re-enable auto-connect button
                     });
                 }
                 
@@ -225,6 +229,7 @@ public class MainActivity extends AppCompatActivity {
             if (mServiceBound && mBridgeService != null) {
                 mBridgeService.startAutoReconnect();
                 updateStatus("正在尝试自动连接...");
+                mAutoConnectButton.setEnabled(false); // Disable button immediately
             }
         });
         
@@ -500,21 +505,31 @@ public class MainActivity extends AppCompatActivity {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
             if (powerManager != null && !powerManager.isIgnoringBatteryOptimizations(getPackageName())) {
-                try {
-                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to request battery optimization whitelist", e);
-                    // 如果上面的方法失败，尝试打开电池优化设置页面
-                    try {
-                        Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
-                        startActivity(intent);
-                        Toast.makeText(this, "请将此应用添加到电池优化白名单以确保后台运行", Toast.LENGTH_LONG).show();
-                    } catch (Exception ex) {
-                        Log.e(TAG, "Failed to open battery optimization settings", ex);
-                    }
-                }
+                new AlertDialog.Builder(this)
+                    .setTitle("电池优化提示")
+                    .setMessage("为了确保应用在后台稳定运行，持续接收 iPhone 通知，请将本应用添加到电池优化白名单。这有助于防止系统在后台杀死应用。")
+                    .setPositiveButton("前往设置", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            try {
+                                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                                intent.setData(Uri.parse("package:" + getPackageName()));
+                                startActivity(intent);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Failed to request battery optimization whitelist", e);
+                                // Fallback to general battery optimization settings if specific request fails
+                                try {
+                                    Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                                    startActivity(intent);
+                                    Toast.makeText(MainActivity.this, "请手动将此应用添加到电池优化白名单以确保后台运行", Toast.LENGTH_LONG).show();
+                                } catch (Exception ex) {
+                                    Log.e(TAG, "Failed to open battery optimization settings", ex);
+                                    Toast.makeText(MainActivity.this, "无法打开电池优化设置，请手动前往设置", Toast.LENGTH_LONG).show();
+                                }
+                            }
+                        }
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
             }
         }
     }
