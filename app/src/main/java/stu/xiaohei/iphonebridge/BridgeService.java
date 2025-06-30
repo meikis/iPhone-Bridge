@@ -34,7 +34,11 @@ public class BridgeService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final String PREFS_NAME = "iPhoneBridgePrefs";
     private static final String PREF_LAST_DEVICE = "lastConnectedDevice";
-    private static final long RECONNECT_INTERVAL = 3 * 60 * 1000; // 3分钟
+    
+    // Reconnect constants
+    private static final long INITIAL_RECONNECT_DELAY = 5000; // 5 seconds
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    private static final int RECONNECT_BACKOFF_MULTIPLIER = 2;
     
     // ANCS UUIDs
     private static final String SERVICE_ANCS = "7905F431-B5CE-4E99-A40F-4B1E122D00D0";
@@ -61,6 +65,7 @@ public class BridgeService extends Service {
     private Handler reconnectHandler = new Handler();
     private Runnable reconnectRunnable;
     private boolean shouldReconnect = false;
+    private int reconnectAttempts = 0;
     private SharedPreferences sharedPreferences;
     
     // 电源管理
@@ -125,8 +130,7 @@ public class BridgeService extends Service {
         
         // 启动自动重连
         if (shouldReconnect) {
-            reconnectHandler.removeCallbacks(reconnectRunnable);
-            reconnectHandler.postDelayed(reconnectRunnable, RECONNECT_INTERVAL);
+            startReconnectSequence();
         } else {
             // 尝试连接上次连接的设备
             startAutoReconnect();
@@ -164,12 +168,19 @@ public class BridgeService extends Service {
             @Override
             public void run() {
                 if (shouldReconnect && connectedDevice != null && !isConnected()) {
-                    Log.d(TAG, "Attempting to reconnect to device: " + connectedDevice.getAddress());
-                    connectToDevice(connectedDevice);
-                }
-                
-                if (shouldReconnect) {
-                    reconnectHandler.postDelayed(this, RECONNECT_INTERVAL);
+                    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                        Log.d(TAG, "Attempting to reconnect (attempt " + (reconnectAttempts + 1) + ") to device: " + connectedDevice.getAddress());
+                        connectToDevice(connectedDevice);
+                        reconnectAttempts++;
+                        long nextDelay = INITIAL_RECONNECT_DELAY * (long) Math.pow(RECONNECT_BACKOFF_MULTIPLIER, reconnectAttempts);
+                        reconnectHandler.postDelayed(this, nextDelay);
+                    } else {
+                        Log.e(TAG, "Max reconnect attempts reached. Stopping reconnection.");
+                        updateNotification("无法连接到设备");
+                        shouldReconnect = false;
+                    }
+                } else {
+                    reconnectHandler.removeCallbacks(this);
                 }
             }
         };
@@ -216,6 +227,16 @@ public class BridgeService extends Service {
             }
         }
     }
+
+    private void startReconnectSequence() {
+        if (!shouldReconnect || connectedDevice == null) {
+            return;
+        }
+        updateNotification("正在尝试重新连接...");
+        reconnectAttempts = 0;
+        reconnectHandler.removeCallbacks(reconnectRunnable);
+        reconnectHandler.postDelayed(reconnectRunnable, INITIAL_RECONNECT_DELAY);
+    }
     
     public boolean isConnected() {
         return bluetoothGatt != null && connectedDevice != null;
@@ -236,6 +257,7 @@ public class BridgeService extends Service {
                 
                 // 连接成功后停止重连定时器
                 reconnectHandler.removeCallbacks(reconnectRunnable);
+                reconnectAttempts = 0;
                 
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "Disconnected from GATT server");
@@ -243,8 +265,6 @@ public class BridgeService extends Service {
                 if (serviceCallback != null) {
                     serviceCallback.onConnectionStateChanged(false);
                 }
-                
-                updateNotification("连接已断开，将在3分钟后重连");
                 
                 // 清理GATT连接
                 if (bluetoothGatt != null) {
@@ -254,8 +274,7 @@ public class BridgeService extends Service {
                 
                 // 启动自动重连
                 if (shouldReconnect && connectedDevice != null) {
-                    reconnectHandler.removeCallbacks(reconnectRunnable);
-                    reconnectHandler.postDelayed(reconnectRunnable, RECONNECT_INTERVAL);
+                    startReconnectSequence();
                 }
             }
         }
