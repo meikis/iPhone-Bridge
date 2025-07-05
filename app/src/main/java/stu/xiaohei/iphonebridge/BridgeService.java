@@ -1,5 +1,6 @@
 package stu.xiaohei.iphonebridge;
 
+import java.io.File;
 import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -28,6 +29,7 @@ import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
+import java.io.File;
 import java.util.UUID;
 
 public class BridgeService extends Service {
