@@ -257,6 +257,7 @@ public class MainActivity extends AppCompatActivity {
             // 尝试结束Activity，避免循环崩溃
             finish();
         }
+    }
     
     private void initViews() {
         mStatusText = findViewById(R.id.statusText);
