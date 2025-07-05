@@ -1,5 +1,6 @@
 package stu.xiaohei.iphonebridge;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -22,6 +23,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -34,6 +36,7 @@ public class BridgeService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final String PREFS_NAME = "iPhoneBridgePrefs";
     private static final String PREF_LAST_DEVICE = "lastConnectedDevice";
+    public static final String ACTION_CHECK_CONNECTION = "stu.xiaohei.iphonebridge.ACTION_CHECK_CONNECTION";
     
     // Reconnect constants
     private static final long INITIAL_RECONNECT_DELAY = 5000; // 5 seconds
@@ -103,8 +106,9 @@ public class BridgeService extends Service {
                 return;
             }
             
-            notificationHandler = new NotificationHandler();
+            notificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
             sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            shouldReconnect = sharedPreferences.getBoolean("shouldReconnect", false);
             
             // 初始化电源管理
             PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -126,8 +130,16 @@ public class BridgeService extends Service {
     
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.d(TAG, "Service started");
-        
+        Log.d(TAG, "Service started with action: " + intent.getAction());
+
+        if (ACTION_CHECK_CONNECTION.equals(intent.getAction())) {
+            if (!isConnected()) {
+                Log.d(TAG, "Connection check: Disconnected, attempting to reconnect.");
+                startAutoReconnect();
+            }
+            return START_STICKY;
+        }
+
         // 启动自动重连
         if (shouldReconnect) {
             startReconnectSequence();
@@ -148,6 +160,7 @@ public class BridgeService extends Service {
             wakeLock.release();
         }
         
+        cancelConnectionCheck();
         reconnectHandler.removeCallbacks(reconnectRunnable);
         disconnect();
         
@@ -194,6 +207,7 @@ public class BridgeService extends Service {
         
         connectedDevice = device;
         shouldReconnect = true;
+        sharedPreferences.edit().putBoolean("shouldReconnect", true).apply();
         
         // 保存设备地址以便重连
         sharedPreferences.edit().putString(PREF_LAST_DEVICE, device.getAddress()).apply();
@@ -206,7 +220,8 @@ public class BridgeService extends Service {
     }
     
     public void disconnect() {
-        // Do not set shouldReconnect to false here. It should only be set to false if auto-reconnect is explicitly stopped.
+        shouldReconnect = false;
+        sharedPreferences.edit().putBoolean("shouldReconnect", false).apply();
         reconnectHandler.removeCallbacks(reconnectRunnable);
         
         if (bluetoothGatt != null) {
@@ -237,9 +252,33 @@ public class BridgeService extends Service {
         reconnectHandler.removeCallbacks(reconnectRunnable);
         reconnectHandler.postDelayed(reconnectRunnable, INITIAL_RECONNECT_DELAY);
     }
+
+    private void scheduleConnectionCheck() {
+        Intent intent = new Intent(this, ConnectionCheckReceiver.class);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        // Schedule the alarm to repeat approximately every 15 minutes.
+        // Use inexact repeating alarm to save battery.
+        alarmManager.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                                        SystemClock.elapsedRealtime() + AlarmManager.INTERVAL_FIFTEEN_MINUTES,
+                                        AlarmManager.INTERVAL_FIFTEEN_MINUTES,
+                                        pendingIntent);
+        Log.d(TAG, "Scheduled connection check.");
+    }
+
+    private void cancelConnectionCheck() {
+        Intent intent = new Intent(this, ConnectionCheckReceiver.class);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        alarmManager.cancel(pendingIntent);
+        Log.d(TAG, "Cancelled connection check.");
+    }
     
     public boolean isConnected() {
-        return bluetoothGatt != null && connectedDevice != null;
+        if (bluetoothManager != null && connectedDevice != null) {
+            return bluetoothManager.getConnectionState(connectedDevice, BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED;
+        }
+        return false;
     }
     
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
@@ -254,6 +293,7 @@ public class BridgeService extends Service {
                 }
                 
                 updateNotification("已连接到 iPhone");
+                scheduleConnectionCheck();
                 
                 // 连接成功后停止重连定时器
                 reconnectHandler.removeCallbacks(reconnectRunnable);
@@ -600,5 +640,11 @@ public class BridgeService extends Service {
             return notificationHandler.getNotification(uid);
         }
         return null;
+    }
+
+    public void clearAllNotifications() {
+        if (notificationHandler != null) {
+            notificationHandler.clearAllNotifications();
+        }
     }
 }

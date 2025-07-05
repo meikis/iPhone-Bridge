@@ -81,6 +81,12 @@
                 <data android:scheme="package" />
             </intent-filter>
         </receiver>
+
+        <!-- 连接检查接收器 -->
+        <receiver
+            android:name=".ConnectionCheckReceiver"
+            android:enabled="true"
+            android:exported="false" />
         
     </application>
 

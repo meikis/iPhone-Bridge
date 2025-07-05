@@ -1,12 +1,22 @@
 package stu.xiaohei.iphonebridge;
 
-import android.util.Log;
-
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.TimeZone;
+import java.util.concurrent.TimeUnit;
 
 public class NotificationHandler {
     private static final String TAG = "NotificationHandler";
@@ -58,6 +68,13 @@ public class NotificationHandler {
     
     private Map<String, NotificationInfo> notifications = new HashMap<>();
     private Map<String, ByteBuffer> pendingDataBuffers = new HashMap<>();
+    private File storageFile;
+    private Gson gson = new Gson();
+
+    public NotificationHandler(File storageFile) {
+        this.storageFile = storageFile;
+        loadNotifications();
+    }
     
     public static class NotificationInfo {
         public String uid;
@@ -73,9 +90,11 @@ public class NotificationHandler {
         public String negativeActionLabel;
         public boolean hasPositiveAction;
         public boolean hasNegativeAction;
+        public long timestamp;
         
         public NotificationInfo(String uid) {
             this.uid = uid;
+            this.timestamp = System.currentTimeMillis();
         }
         
         public String getFormattedInfo() {
@@ -111,6 +130,7 @@ public class NotificationHandler {
         info.hasNegativeAction = (eventFlags & EVENT_FLAG_NEGATIVE_ACTION) != 0;
         
         notifications.put(uid, info);
+        saveNotifications();
         
         Log.d(TAG, "Parsed notification: " + info.getFormattedInfo());
         return info;
@@ -270,6 +290,47 @@ public class NotificationHandler {
     
     public void removeNotification(String uid) {
         notifications.remove(uid);
+        saveNotifications();
+    }
+
+    public void clearAllNotifications() {
+        notifications.clear();
+        saveNotifications();
+        Log.d(TAG, "All notifications cleared.");
+    }
+
+    public void clearOldNotifications(int days) {
+        long cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days);
+        boolean changed = notifications.entrySet().removeIf(entry -> entry.getValue().timestamp < cutoff);
+        if (changed) {
+            saveNotifications();
+            Log.d(TAG, "Cleared notifications older than " + days + " days.");
+        }
+    }
+
+    private void saveNotifications() {
+        try (FileWriter writer = new FileWriter(storageFile)) {
+            gson.toJson(notifications, writer);
+            Log.d(TAG, "Notifications saved to " + storageFile.getAbsolutePath());
+        } catch (IOException e) {
+            Log.e(TAG, "Error saving notifications", e);
+        }
+    }
+
+    private void loadNotifications() {
+        if (storageFile.exists()) {
+            try (FileReader reader = new FileReader(storageFile)) {
+                Type type = new TypeToken<HashMap<String, NotificationInfo>>(){}.getType();
+                notifications = gson.fromJson(reader, type);
+                if (notifications == null) {
+                    notifications = new HashMap<>();
+                }
+                Log.d(TAG, "Notifications loaded from " + storageFile.getAbsolutePath());
+                clearOldNotifications(7); // Clean notifications older than 7 days
+            } catch (IOException e) {
+                Log.e(TAG, "Error loading notifications", e);
+            }
+        }
     }
     
     public static String getCategoryName(byte categoryId) {

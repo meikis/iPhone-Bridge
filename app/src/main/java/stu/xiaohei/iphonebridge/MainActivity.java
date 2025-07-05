@@ -31,6 +31,9 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
@@ -544,5 +547,26 @@ public class MainActivity extends AppCompatActivity {
         }
         
         unregisterReceiver(mBondReceiver);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.main_menu, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.action_clear_notifications) {
+            if (mServiceBound && mBridgeService != null) {
+                mBridgeService.clearAllNotifications();
+                mNotificationAdapter.clear();
+                mNotificationAdapter.notifyDataSetChanged();
+                Toast.makeText(this, "所有通知已清空", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 }

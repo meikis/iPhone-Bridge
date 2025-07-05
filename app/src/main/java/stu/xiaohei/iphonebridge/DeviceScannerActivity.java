@@ -173,6 +173,13 @@ public class DeviceScannerActivity extends AppCompatActivity {
                 mDeviceMap.put(address, info);
             }
             
+            // 按配对状态和信号强度排序
+            mDevices.sort((d1, d2) -> {
+                if (d1.isPaired && !d2.isPaired) return -1;
+                if (!d1.isPaired && d2.isPaired) return 1;
+                return Integer.compare(d2.rssi, d1.rssi); // RSSI降序
+            });
+            
             notifyDataSetChanged();
         }
         
