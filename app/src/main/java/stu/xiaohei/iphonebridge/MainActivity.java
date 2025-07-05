@@ -209,8 +209,8 @@ public class MainActivity extends AppCompatActivity {
         try {
             setContentView(R.layout.activity_main_improved);
             
-            initBluetooth();
             initViews();
+            initBluetooth();
             checkPermissions();
             registerBondReceiver();
             requestBatteryOptimizationWhitelist();
