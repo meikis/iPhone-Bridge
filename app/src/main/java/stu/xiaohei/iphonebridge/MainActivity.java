@@ -62,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "iPhoneBridge";
     private static final String PREFS_NAME = "iPhoneBridgePrefs";
     private static final String PREF_LAST_DEVICE = "lastConnectedDevice";
+    public static final String EXTRA_DEVICE_ADDRESS = "extra_device_address";
     
     // ANCS Service UUID
     private static final String SERVICE_ANCS = "7905F431-B5CE-4E99-A40F-4B1E122D00D0";
@@ -207,13 +208,36 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main_improved);
         
+        initBluetooth();
         initViews();
         checkPermissions();
-        initBluetooth();
         registerBondReceiver();
         requestBatteryOptimizationWhitelist();
         
         mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
+
+        // 检查是否从通知启动并带有设备地址
+        Intent intent = getIntent();
+        if (intent != null && intent.hasExtra(BridgeService.EXTRA_DEVICE_ADDRESS)) {
+            String deviceAddress = intent.getStringExtra(BridgeService.EXTRA_DEVICE_ADDRESS);
+            if (deviceAddress != null && mBluetoothAdapter != null) {
+                try {
+                    mTargetDevice = mBluetoothAdapter.getRemoteDevice(deviceAddress);
+                    updateDeviceInfo(mTargetDevice);
+                    mConnectButton.setEnabled(true);
+                    // 延迟连接，确保服务已绑定
+                    mHandler.postDelayed(() -> {
+                        if (mServiceBound && mBridgeService != null) {
+                            connectDevice();
+                        } else {
+                            Toast.makeText(this, "服务未就绪，无法连接设备", Toast.LENGTH_SHORT).show();
+                        }
+                    }, 1000); // 延迟1秒，确保服务绑定
+                } catch (IllegalArgumentException e) {
+                    Log.e(TAG, "Invalid Bluetooth address from notification: " + deviceAddress, e);
+                }
+            }
+        }
 
         // 启动服务
         Intent serviceIntent = new Intent(this, BridgeService.class);

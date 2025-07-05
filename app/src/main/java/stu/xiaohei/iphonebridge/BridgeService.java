@@ -39,6 +39,7 @@ public class BridgeService extends Service {
     private static final String PREFS_NAME = "iPhoneBridgePrefs";
     private static final String PREF_LAST_DEVICE = "lastConnectedDevice";
     public static final String ACTION_CHECK_CONNECTION = "stu.xiaohei.iphonebridge.ACTION_CHECK_CONNECTION";
+    public static final String EXTRA_DEVICE_ADDRESS = "extra_device_address";
     
     // Reconnect constants
     private static final long INITIAL_RECONNECT_DELAY = 5000; // 5 seconds
@@ -608,6 +609,9 @@ public class BridgeService extends Service {
     
     private Notification updateNotification(String text) {
         Intent notificationIntent = new Intent(this, MainActivity.class);
+        if (connectedDevice != null) {
+            notificationIntent.putExtra(EXTRA_DEVICE_ADDRESS, connectedDevice.getAddress());
+        }
         PendingIntent pendingIntent = PendingIntent.getActivity(
             this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE
         );
