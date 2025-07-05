@@ -42,8 +42,8 @@ public class BridgeService extends Service {
     public static final String EXTRA_DEVICE_ADDRESS = "extra_device_address";
     
     // Reconnect constants
-    private static final long INITIAL_RECONNECT_DELAY = 5000; // 5 seconds
-    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    private static final long INITIAL_RECONNECT_DELAY = 10000; // 10 seconds
+    private static final int MAX_RECONNECT_ATTEMPTS = 10;
     private static final int RECONNECT_BACKOFF_MULTIPLIER = 2;
     private static final long CONNECTION_CHECK_INTERVAL = 5 * 60 * 1000L; // Check connection every 5 minutes
     
