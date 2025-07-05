@@ -544,6 +544,22 @@ public class MainActivity extends AppCompatActivity {
     }
     
     @Override
+    protected void onResume() {
+        super.onResume();
+        // 当Activity回到前台时，尝试自动连接
+        if (mServiceBound && mBridgeService != null) {
+            mBridgeService.startAutoReconnect();
+            updateStatus("应用回到前台，正在尝试自动连接...");
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // 当Activity进入后台时，不需要断开连接，服务会继续运行
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         

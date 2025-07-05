@@ -143,12 +143,7 @@ public class BridgeService extends Service {
         }
 
         // 启动自动重连
-        if (shouldReconnect) {
-            startReconnectSequence();
-        } else {
-            // 尝试连接上次连接的设备
-            startAutoReconnect();
-        }
+        startAutoReconnect();
         
         return START_STICKY;
     }
