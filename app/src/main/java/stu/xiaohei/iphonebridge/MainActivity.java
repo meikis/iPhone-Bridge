@@ -217,11 +217,11 @@ public class MainActivity extends AppCompatActivity {
         mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
 
         // 检查是否从通知启动并带有设备地址
-        Intent intent = getIntent();
-        if (intent != null && intent.hasExtra(BridgeService.EXTRA_DEVICE_ADDRESS)) {
-            String deviceAddress = intent.getStringExtra(BridgeService.EXTRA_DEVICE_ADDRESS);
-            if (deviceAddress != null && mBluetoothAdapter != null) {
-                try {
+        try {
+            Intent intent = getIntent();
+            if (intent != null && intent.hasExtra(BridgeService.EXTRA_DEVICE_ADDRESS)) {
+                String deviceAddress = intent.getStringExtra(BridgeService.EXTRA_DEVICE_ADDRESS);
+                if (deviceAddress != null && mBluetoothAdapter != null) {
                     mTargetDevice = mBluetoothAdapter.getRemoteDevice(deviceAddress);
                     updateDeviceInfo(mTargetDevice);
                     mConnectButton.setEnabled(true);
@@ -233,10 +233,17 @@ public class MainActivity extends AppCompatActivity {
                             Toast.makeText(this, "服务未就绪，无法连接设备", Toast.LENGTH_SHORT).show();
                         }
                     }, 1000); // 延迟1秒，确保服务绑定
-                } catch (IllegalArgumentException e) {
-                    Log.e(TAG, "Invalid Bluetooth address from notification: " + deviceAddress, e);
+                } else if (deviceAddress == null) {
+                    Log.w(TAG, "Device address from notification is null.");
+                    Toast.makeText(this, "通知启动：设备地址为空", Toast.LENGTH_SHORT).show();
+                } else { // mBluetoothAdapter == null
+                    Log.e(TAG, "Bluetooth adapter is null when trying to get remote device from notification.");
+                    Toast.makeText(this, "通知启动：蓝牙适配器未就绪", Toast.LENGTH_SHORT).show();
                 }
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error processing notification intent: " + e.getMessage(), e);
+            Toast.makeText(this, "处理通知启动时发生错误: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
 
         // 启动服务
@@ -357,6 +364,7 @@ public class MainActivity extends AppCompatActivity {
         if (!permissions.isEmpty()) {
             ActivityCompat.requestPermissions(this, 
                 permissions.toArray(new String[0]), 1);
+            Toast.makeText(this, "请授予蓝牙和位置权限以使用全部功能", Toast.LENGTH_LONG).show();
         }
     }
     
@@ -364,30 +372,48 @@ public class MainActivity extends AppCompatActivity {
         BluetoothManager bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         if (bluetoothManager == null) {
             updateStatus("蓝牙不可用");
+            Toast.makeText(this, "蓝牙不可用", Toast.LENGTH_SHORT).show();
             return;
         }
-        
-        mBluetoothAdapter = bluetoothManager.getAdapter();
-        if (mBluetoothAdapter == null) {
-            updateStatus("设备不支持蓝牙");
-            return;
-        }
-        
-        // 检查Android 12+的蓝牙权限
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) 
-                    != PackageManager.PERMISSION_GRANTED) {
-                updateStatus("需要蓝牙连接权限");
+
+        try {
+            mBluetoothAdapter = bluetoothManager.getAdapter();
+            if (mBluetoothAdapter == null) {
+                updateStatus("设备不支持蓝牙");
+                Toast.makeText(this, "设备不支持蓝牙", Toast.LENGTH_SHORT).show();
                 return;
             }
-        }
-        
-        if (!mBluetoothAdapter.isEnabled()) {
-            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(enableBtIntent, 1);
-        } else {
-            mBluetoothLeScanner = mBluetoothAdapter.getBluetoothLeScanner();
-            updateStatus("蓝牙已就绪");
+
+            // 检查Android 12+的蓝牙连接权限
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    updateStatus("需要蓝牙连接权限");
+                    Toast.makeText(this, "需要蓝牙连接权限", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+            }
+
+            if (!mBluetoothAdapter.isEnabled()) {
+                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                startActivityForResult(enableBtIntent, 1);
+            } else {
+                // 检查Android 12+的蓝牙扫描权限，因为getBluetoothLeScanner()需要此权限
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+                            != PackageManager.PERMISSION_GRANTED) {
+                        updateStatus("需要蓝牙扫描权限");
+                        Toast.makeText(this, "需要蓝牙扫描权限", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                }
+                mBluetoothLeScanner = mBluetoothAdapter.getBluetoothLeScanner();
+                updateStatus("蓝牙已就绪");
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "Bluetooth permission error: " + e.getMessage(), e);
+            updateStatus("蓝牙权限错误");
+            Toast.makeText(this, "蓝牙权限错误，请检查权限设置", Toast.LENGTH_LONG).show();
         }
     }
     
