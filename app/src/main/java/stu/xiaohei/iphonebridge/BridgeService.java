@@ -44,6 +44,7 @@ public class BridgeService extends Service {
     private static final long INITIAL_RECONNECT_DELAY = 5000; // 5 seconds
     private static final int MAX_RECONNECT_ATTEMPTS = 5;
     private static final int RECONNECT_BACKOFF_MULTIPLIER = 2;
+    private static final long CONNECTION_CHECK_INTERVAL = 5 * 60 * 1000L; // Check connection every 5 minutes
     
     // ANCS UUIDs
     private static final String SERVICE_ANCS = "7905F431-B5CE-4E99-A40F-4B1E122D00D0";
@@ -142,8 +143,10 @@ public class BridgeService extends Service {
             return START_STICKY;
         }
 
-        // 启动自动重连
-        startAutoReconnect();
+        // 启动自动重连，如果之前是连接状态
+        if (shouldReconnect) {
+            startAutoReconnect();
+        }
         
         return START_STICKY;
     }
@@ -257,8 +260,8 @@ public class BridgeService extends Service {
         // Schedule the alarm to repeat approximately every 15 minutes.
         // Use inexact repeating alarm to save battery.
         alarmManager.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                                        SystemClock.elapsedRealtime() + AlarmManager.INTERVAL_FIFTEEN_MINUTES,
-                                        AlarmManager.INTERVAL_FIFTEEN_MINUTES,
+                                        SystemClock.elapsedRealtime() + CONNECTION_CHECK_INTERVAL,
+                                        CONNECTION_CHECK_INTERVAL,
                                         pendingIntent);
         Log.d(TAG, "Scheduled connection check.");
     }
@@ -503,6 +506,9 @@ public class BridgeService extends Service {
         }
         
         String appName = ANCSConstants.getAppDisplayName(info.appId);
+        if (appName == null || appName.isEmpty()) {
+            appName = "未知应用"; // Fallback for unknown app IDs
+        }
         String notificationTitle = "";
         String notificationContent = "";
         

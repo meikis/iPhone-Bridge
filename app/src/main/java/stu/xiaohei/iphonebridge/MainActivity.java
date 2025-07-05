@@ -251,7 +251,34 @@ public class MainActivity extends AppCompatActivity {
         });
         
         mConnectButton.setEnabled(false);
-        updateDeviceInfo(null);
+        
+        // Load last connected device
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String lastDeviceAddress = prefs.getString(PREF_LAST_DEVICE, null);
+        if (lastDeviceAddress != null) {
+            BluetoothManager bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+            if (bluetoothManager != null) {
+                BluetoothAdapter adapter = bluetoothManager.getAdapter();
+                if (adapter != null) {
+                    try {
+                        mTargetDevice = adapter.getRemoteDevice(lastDeviceAddress);
+                        updateDeviceInfo(mTargetDevice);
+                        mConnectButton.setEnabled(true);
+                        updateStatus("已加载上次连接设备: " + (mTargetDevice.getName() != null ? mTargetDevice.getName() : mTargetDevice.getAddress()));
+                    } catch (IllegalArgumentException e) {
+                        Log.e(TAG, "Invalid Bluetooth address stored: " + lastDeviceAddress, e);
+                        updateStatus("上次连接设备地址无效");
+                        updateDeviceInfo(null); // Reset if invalid
+                    }
+                } else {
+                    updateDeviceInfo(null); // Reset if adapter is null
+                }
+            } else {
+                updateDeviceInfo(null); // Reset if bluetoothManager is null
+            }
+        } else {
+            updateDeviceInfo(null); // No last device found
+        }
     }
     
     private void updateDeviceInfo(BluetoothDevice device) {
