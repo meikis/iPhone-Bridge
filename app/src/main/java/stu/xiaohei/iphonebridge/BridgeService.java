@@ -134,6 +134,12 @@ public class BridgeService extends Service {
     
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent == null) {
+            Log.w(TAG, "Service started with null intent. This might happen if the service was killed and restarted by the system.");
+            // If intent is null, we can't get an action, so we just return START_STICKY
+            // to ensure the service is restarted if it was killed.
+            return START_STICKY;
+        }
         Log.d(TAG, "Service started with action: " + intent.getAction());
 
         if (ACTION_CHECK_CONNECTION.equals(intent.getAction())) {
