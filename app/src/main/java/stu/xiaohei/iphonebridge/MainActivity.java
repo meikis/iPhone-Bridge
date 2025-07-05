@@ -90,7 +90,10 @@ public class MainActivity extends AppCompatActivity {
     private static final long SCAN_PERIOD = 10000;
     
     private List<NotificationItem> mNotifications = new ArrayList<>();
-    private NotificationHandler mNotificationHandler = new NotificationHandler();
+    private NotificationHandler mNotificationHandler;
+
+    // In onCreate or initViews, after context is available
+    // mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
     
     // 通知项数据类
     public static class NotificationItem {
@@ -209,6 +212,8 @@ public class MainActivity extends AppCompatActivity {
         registerBondReceiver();
         requestBatteryOptimizationWhitelist();
         
+        mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
+
         // 启动服务
         Intent serviceIntent = new Intent(this, BridgeService.class);
         startService(serviceIntent);
