@@ -206,51 +206,57 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main_improved);
-        
-        initBluetooth();
-        initViews();
-        checkPermissions();
-        registerBondReceiver();
-        requestBatteryOptimizationWhitelist();
-        
-        mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
-
-        // 检查是否从通知启动并带有设备地址
         try {
-            Intent intent = getIntent();
-            if (intent != null && intent.hasExtra(BridgeService.EXTRA_DEVICE_ADDRESS)) {
-                String deviceAddress = intent.getStringExtra(BridgeService.EXTRA_DEVICE_ADDRESS);
-                if (deviceAddress != null && mBluetoothAdapter != null) {
-                    mTargetDevice = mBluetoothAdapter.getRemoteDevice(deviceAddress);
-                    updateDeviceInfo(mTargetDevice);
-                    mConnectButton.setEnabled(true);
-                    // 延迟连接，确保服务已绑定
-                    mHandler.postDelayed(() -> {
-                        if (mServiceBound && mBridgeService != null) {
-                            connectDevice();
-                        } else {
-                            Toast.makeText(this, "服务未就绪，无法连接设备", Toast.LENGTH_SHORT).show();
-                        }
-                    }, 1000); // 延迟1秒，确保服务绑定
-                } else if (deviceAddress == null) {
-                    Log.w(TAG, "Device address from notification is null.");
-                    Toast.makeText(this, "通知启动：设备地址为空", Toast.LENGTH_SHORT).show();
-                } else { // mBluetoothAdapter == null
-                    Log.e(TAG, "Bluetooth adapter is null when trying to get remote device from notification.");
-                    Toast.makeText(this, "通知启动：蓝牙适配器未就绪", Toast.LENGTH_SHORT).show();
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error processing notification intent: " + e.getMessage(), e);
-            Toast.makeText(this, "处理通知启动时发生错误: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
+            setContentView(R.layout.activity_main_improved);
+            
+            initBluetooth();
+            initViews();
+            checkPermissions();
+            registerBondReceiver();
+            requestBatteryOptimizationWhitelist();
+            
+            mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
 
-        // 启动服务
-        Intent serviceIntent = new Intent(this, BridgeService.class);
-        startService(serviceIntent);
-        bindService(serviceIntent, mServiceConnection, BIND_AUTO_CREATE);
-    }
+            // 检查是否从通知启动并带有设备地址
+            try {
+                Intent intent = getIntent();
+                if (intent != null && intent.hasExtra(BridgeService.EXTRA_DEVICE_ADDRESS)) {
+                    String deviceAddress = intent.getStringExtra(BridgeService.EXTRA_DEVICE_ADDRESS);
+                    if (deviceAddress != null && mBluetoothAdapter != null) {
+                        mTargetDevice = mBluetoothAdapter.getRemoteDevice(deviceAddress);
+                        updateDeviceInfo(mTargetDevice);
+                        mConnectButton.setEnabled(true);
+                        // 延迟连接，确保服务已绑定
+                        mHandler.postDelayed(() -> {
+                            if (mServiceBound && mBridgeService != null) {
+                                connectDevice();
+                            } else {
+                                Toast.makeText(this, "服务未就绪，无法连接设备", Toast.LENGTH_SHORT).show();
+                            }
+                        }, 1000); // 延迟1秒，确保服务绑定
+                    } else if (deviceAddress == null) {
+                        Log.w(TAG, "Device address from notification is null.");
+                        Toast.makeText(this, "通知启动：设备地址为空", Toast.LENGTH_SHORT).show();
+                    } else { // mBluetoothAdapter == null
+                        Log.e(TAG, "Bluetooth adapter is null when trying to get remote device from notification.");
+                        Toast.makeText(this, "通知启动：蓝牙适配器未就绪", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error processing notification intent: " + e.getMessage(), e);
+                Toast.makeText(this, "处理通知启动时发生错误: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+
+            // 启动服务
+            Intent serviceIntent = new Intent(this, BridgeService.class);
+            startService(serviceIntent);
+            bindService(serviceIntent, mServiceConnection, BIND_AUTO_CREATE);
+        } catch (Throwable t) {
+            Log.e(TAG, "Unhandled exception in onCreate: " + t.getMessage(), t);
+            Toast.makeText(this, "应用启动时发生未知错误: " + t.getMessage(), Toast.LENGTH_LONG).show();
+            // 尝试结束Activity，避免循环崩溃
+            finish();
+        }
     
     private void initViews() {
         mStatusText = findViewById(R.id.statusText);
