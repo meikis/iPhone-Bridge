@@ -342,7 +342,7 @@ public class BridgeService extends Service {
                     wakeLock.release();
                     Log.d(TAG, "WakeLock released on disconnection.");
                 }
-        }
+            }
         
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
