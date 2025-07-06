@@ -293,7 +293,14 @@ public class BridgeService extends Service {
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 Log.i(TAG, "Connected to GATT server");
-                gatt.discoverServices();
+                // Add a small delay before discovering services to allow the GATT stack to stabilize
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (gatt != null) { // Ensure gatt is still valid
+                        gatt.discoverServices();
+                    } else {
+                        Log.e(TAG, "GATT object is null after connection, cannot discover services.");
+                    }
+                }, 500); // 500ms delay
                 
                 if (serviceCallback != null) {
                     serviceCallback.onConnectionStateChanged(true);
