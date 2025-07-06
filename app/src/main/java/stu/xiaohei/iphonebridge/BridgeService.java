@@ -343,7 +343,6 @@ public class BridgeService extends Service {
                     Log.d(TAG, "WakeLock released on disconnection.");
                 }
             }
-        
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
