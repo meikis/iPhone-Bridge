@@ -22,6 +22,7 @@ import android.content.SharedPreferences;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
@@ -45,7 +46,7 @@ public class BridgeService extends Service {
     private static final long INITIAL_RECONNECT_DELAY = 10000; // 10 seconds
     private static final int MAX_RECONNECT_ATTEMPTS = 10;
     private static final int RECONNECT_BACKOFF_MULTIPLIER = 2;
-    private static final long CONNECTION_CHECK_INTERVAL = 5 * 60 * 1000L; // Check connection every 5 minutes
+    private static final long CONNECTION_CHECK_INTERVAL = 15 * 60 * 1000L; // Check connection every 15 minutes
     
     // ANCS UUIDs
     private static final String SERVICE_ANCS = "7905F431-B5CE-4E99-A40F-4B1E122D00D0";
@@ -117,7 +118,6 @@ public class BridgeService extends Service {
             // 初始化电源管理
             PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "iPhoneBridge::ServiceWakeLock");
-            wakeLock.acquire();
             
             // 初始化自动重连
             initAutoReconnect();
@@ -312,6 +312,12 @@ public class BridgeService extends Service {
                 // 连接成功后停止重连定时器
                 reconnectHandler.removeCallbacks(reconnectRunnable);
                 reconnectAttempts = 0;
+
+                // 连接成功时获取 WakeLock
+                if (wakeLock != null && !wakeLock.isHeld()) {
+                    wakeLock.acquire();
+                    Log.d(TAG, "WakeLock acquired on connection.");
+                }
                 
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "Disconnected from GATT server");
@@ -330,7 +336,12 @@ public class BridgeService extends Service {
                 if (shouldReconnect && connectedDevice != null) {
                     startReconnectSequence();
                 }
-            }
+
+                // 断开连接时释放 WakeLock
+                if (wakeLock != null && wakeLock.isHeld()) {
+                    wakeLock.release();
+                    Log.d(TAG, "WakeLock released on disconnection.");
+                }
         }
         
         @Override
