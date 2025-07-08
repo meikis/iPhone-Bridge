@@ -293,6 +293,10 @@ public class NotificationHandler {
         saveNotifications();
     }
 
+    public Map<String, NotificationInfo> getAllNotifications() {
+        return notifications;
+    }
+
     public void clearAllNotifications() {
         notifications.clear();
         saveNotifications();

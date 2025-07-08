@@ -52,11 +52,14 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.io.File;
 
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+
+import java.util.Collections;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "iPhoneBridge";
@@ -269,6 +272,8 @@ public class MainActivity extends AppCompatActivity {
         
         mNotificationAdapter = new NotificationAdapter(this);
         mNotificationList.setAdapter(mNotificationAdapter);
+
+        loadInitialNotifications();
         
         mScanButton.setOnClickListener(v -> startScan());
         mConnectButton.setOnClickListener(v -> toggleConnection());
@@ -316,6 +321,26 @@ public class MainActivity extends AppCompatActivity {
             }
         } else {
             updateDeviceInfo(null); // No last device found
+        }
+    }
+
+    private void loadInitialNotifications() {
+        if (mNotificationHandler != null) {
+            Map<String, NotificationHandler.NotificationInfo> loadedNotifications = mNotificationHandler.getAllNotifications();
+            if (loadedNotifications != null && !loadedNotifications.isEmpty()) {
+                List<NotificationHandler.NotificationInfo> sortedNotifications = new ArrayList<>(loadedNotifications.values());
+                // Sort by timestamp, newest first
+                Collections.sort(sortedNotifications, (o1, o2) -> Long.compare(o2.timestamp, o1.timestamp));
+
+                for (NotificationHandler.NotificationInfo info : sortedNotifications) {
+                    addNotificationToList(info);
+                }
+                updateStatus("已加载 " + loadedNotifications.size() + " 条历史通知");
+            } else {
+                updateStatus("没有历史通知");
+            }
+        } else {
+            Log.e(TAG, "NotificationHandler not initialized when loading initial notifications");
         }
     }
     
