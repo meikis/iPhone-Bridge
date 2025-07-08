@@ -160,6 +160,7 @@ public class NotificationHandler {
             if (data.length > 5) {
                 parseNotificationAttributes(data, 5, info);
                 Log.d(TAG, "Updated notification info: " + info.getFormattedInfo());
+                saveNotifications(); // Save changes after updating attributes
             } else {
                 Log.w(TAG, "No attribute data to parse");
             }
@@ -330,7 +331,6 @@ public class NotificationHandler {
                     notifications = new HashMap<>();
                 }
                 Log.d(TAG, "Notifications loaded from " + storageFile.getAbsolutePath());
-                clearOldNotifications(7); // Clean notifications older than 7 days
             } catch (IOException e) {
                 Log.e(TAG, "Error loading notifications", e);
             }
