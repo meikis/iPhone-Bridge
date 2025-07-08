@@ -1,37 +1,11 @@
 package stu.xiaohei.iphonebridge;
 
-import java.io.File;
-import android.app.AlarmManager;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
-import android.app.Service;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGatt;
-import android.bluetooth.BluetoothGattCallback;
-import android.bluetooth.BluetoothGattCharacteristic;
-import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothGattService;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.BluetoothProfile;
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.os.Binder;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.IBinder;
-import android.os.PowerManager;
-import android.os.SystemClock;
-import android.util.Log;
+import androidx.work.Data;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.WorkManager;
 
-import androidx.core.app.NotificationCompat;
-
-import java.io.File;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 public class BridgeService extends Service {
     private static final String TAG = "BridgeService";
@@ -39,14 +13,8 @@ public class BridgeService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final String PREFS_NAME = "iPhoneBridgePrefs";
     private static final String PREF_LAST_DEVICE = "lastConnectedDevice";
-    public static final String ACTION_CHECK_CONNECTION = "stu.xiaohei.iphonebridge.ACTION_CHECK_CONNECTION";
+    public static final String ACTION_RECONNECT = "stu.xiaohei.iphonebridge.ACTION_RECONNECT";
     public static final String EXTRA_DEVICE_ADDRESS = "extra_device_address";
-    
-    // Reconnect constants
-    private static final long INITIAL_RECONNECT_DELAY = 10000; // 10 seconds
-    private static final int MAX_RECONNECT_ATTEMPTS = 10;
-    private static final int RECONNECT_BACKOFF_MULTIPLIER = 2;
-    private static final long CONNECTION_CHECK_INTERVAL = 15 * 60 * 1000L; // Check connection every 15 minutes
     
     // ANCS UUIDs
     private static final String SERVICE_ANCS = "7905F431-B5CE-4E99-A40F-4B1E122D00D0";
@@ -69,11 +37,7 @@ public class BridgeService extends Service {
     private NotificationHandler notificationHandler;
     private ServiceCallback serviceCallback;
     
-    // 自动重连相关
-    private Handler reconnectHandler = new Handler();
-    private Runnable reconnectRunnable;
     private boolean shouldReconnect = false;
-    private int reconnectAttempts = 0;
     private SharedPreferences sharedPreferences;
     
     // 电源管理
@@ -119,9 +83,6 @@ public class BridgeService extends Service {
             PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "iPhoneBridge::ServiceWakeLock");
             
-            // 初始化自动重连
-            initAutoReconnect();
-            
             createNotificationChannel();
             startForeground(NOTIFICATION_ID, createNotification());
             
@@ -136,22 +97,17 @@ public class BridgeService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
             Log.w(TAG, "Service started with null intent. This might happen if the service was killed and restarted by the system.");
-            // If intent is null, we can't get an action, so we just return START_STICKY
-            // to ensure the service is restarted if it was killed.
             return START_STICKY;
         }
         Log.d(TAG, "Service started with action: " + intent.getAction());
 
-        if (ACTION_CHECK_CONNECTION.equals(intent.getAction())) {
-            if (!isConnected()) {
-                Log.d(TAG, "Connection check: Disconnected, attempting to reconnect.");
-                startAutoReconnect();
+        if (ACTION_RECONNECT.equals(intent.getAction())) {
+            String deviceAddress = intent.getStringExtra(EXTRA_DEVICE_ADDRESS);
+            if (deviceAddress != null) {
+                BluetoothDevice device = bluetoothAdapter.getRemoteDevice(deviceAddress);
+                connectToDevice(device);
             }
-            return START_STICKY;
-        }
-
-        // 启动自动重连，如果之前是连接状态
-        if (shouldReconnect) {
+        } else if (shouldReconnect) {
             startAutoReconnect();
         }
         
@@ -162,13 +118,11 @@ public class BridgeService extends Service {
     public void onDestroy() {
         Log.d(TAG, "Service destroyed");
         
-        // 释放资源
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
         
-        cancelConnectionCheck();
-        reconnectHandler.removeCallbacks(reconnectRunnable);
+        WorkManager.getInstance(this).cancelAllWorkByTag("reconnect");
         disconnect();
         
         super.onDestroy();
@@ -183,29 +137,6 @@ public class BridgeService extends Service {
         this.serviceCallback = callback;
     }
     
-    private void initAutoReconnect() {
-        reconnectRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (shouldReconnect && connectedDevice != null && !isConnected()) {
-                    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                        Log.d(TAG, "Attempting to reconnect (attempt " + (reconnectAttempts + 1) + ") to device: " + connectedDevice.getAddress());
-                        connectToDevice(connectedDevice);
-                        reconnectAttempts++;
-                        long nextDelay = INITIAL_RECONNECT_DELAY * (long) Math.pow(RECONNECT_BACKOFF_MULTIPLIER, reconnectAttempts);
-                        reconnectHandler.postDelayed(this, nextDelay);
-                    } else {
-                        Log.e(TAG, "Max reconnect attempts reached. Stopping reconnection.");
-                        updateNotification("无法连接到设备");
-                        shouldReconnect = false;
-                    }
-                } else {
-                    reconnectHandler.removeCallbacks(this);
-                }
-            }
-        };
-    }
-    
     public void connectToDevice(BluetoothDevice device) {
         if (device == null) {
             Log.e(TAG, "Device is null");
@@ -216,7 +147,6 @@ public class BridgeService extends Service {
         shouldReconnect = true;
         sharedPreferences.edit().putBoolean("shouldReconnect", true).apply();
         
-        // 保存设备地址以便重连
         sharedPreferences.edit().putString(PREF_LAST_DEVICE, device.getAddress()).apply();
         
         if (bluetoothGatt != null) {
@@ -229,7 +159,7 @@ public class BridgeService extends Service {
     public void disconnect() {
         shouldReconnect = false;
         sharedPreferences.edit().putBoolean("shouldReconnect", false).apply();
-        reconnectHandler.removeCallbacks(reconnectRunnable);
+        WorkManager.getInstance(this).cancelAllWorkByTag("reconnect");
         
         if (bluetoothGatt != null) {
             bluetoothGatt.disconnect();
@@ -250,35 +180,23 @@ public class BridgeService extends Service {
         }
     }
 
-    private void startReconnectSequence() {
+    private void scheduleReconnect() {
         if (!shouldReconnect || connectedDevice == null) {
             return;
         }
         updateNotification("正在尝试重新连接...");
-        reconnectAttempts = 0;
-        reconnectHandler.removeCallbacks(reconnectRunnable);
-        reconnectHandler.postDelayed(reconnectRunnable, INITIAL_RECONNECT_DELAY);
-    }
 
-    private void scheduleConnectionCheck() {
-        Intent intent = new Intent(this, ConnectionCheckReceiver.class);
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
-        AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        // Schedule the alarm to repeat approximately every 15 minutes.
-        // Use inexact repeating alarm to save battery.
-        alarmManager.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                                        SystemClock.elapsedRealtime() + CONNECTION_CHECK_INTERVAL,
-                                        CONNECTION_CHECK_INTERVAL,
-                                        pendingIntent);
-        Log.d(TAG, "Scheduled connection check.");
-    }
+        Data inputData = new Data.Builder()
+            .putString(ReconnectWorker.KEY_DEVICE_ADDRESS, connectedDevice.getAddress())
+            .build();
 
-    private void cancelConnectionCheck() {
-        Intent intent = new Intent(this, ConnectionCheckReceiver.class);
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
-        AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        alarmManager.cancel(pendingIntent);
-        Log.d(TAG, "Cancelled connection check.");
+        OneTimeWorkRequest reconnectWorkRequest = new OneTimeWorkRequest.Builder(ReconnectWorker.class)
+            .setInputData(inputData)
+            .setInitialDelay(15, TimeUnit.SECONDS)
+            .addTag("reconnect")
+            .build();
+
+        WorkManager.getInstance(this).enqueue(reconnectWorkRequest);
     }
     
     public boolean isConnected() {
@@ -293,27 +211,24 @@ public class BridgeService extends Service {
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 Log.i(TAG, "Connected to GATT server");
-                // Add a small delay before discovering services to allow the GATT stack to stabilize
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    if (gatt != null) { // Ensure gatt is still valid
+                    if (gatt != null) {
                         gatt.discoverServices();
                     } else {
                         Log.e(TAG, "GATT object is null after connection, cannot discover services.");
+                        if (shouldReconnect && connectedDevice != null) {
+                            scheduleReconnect();
+                        }
                     }
-                }, 500); // 500ms delay
+                }, 500);
                 
                 if (serviceCallback != null) {
                     serviceCallback.onConnectionStateChanged(true);
                 }
                 
                 updateNotification("已连接到 iPhone");
-                scheduleConnectionCheck();
-                
-                // 连接成功后停止重连定时器
-                reconnectHandler.removeCallbacks(reconnectRunnable);
-                reconnectAttempts = 0;
+                WorkManager.getInstance(BridgeService.this).cancelAllWorkByTag("reconnect");
 
-                // 连接成功时获取 WakeLock
                 if (wakeLock != null && !wakeLock.isHeld()) {
                     wakeLock.acquire();
                     Log.d(TAG, "WakeLock acquired on connection.");
@@ -326,24 +241,27 @@ public class BridgeService extends Service {
                     serviceCallback.onConnectionStateChanged(false);
                 }
                 
-                // 清理GATT连接
                 if (bluetoothGatt != null) {
                     bluetoothGatt.close();
                     bluetoothGatt = null;
                 }
                 
-                // 启动自动重连
                 if (shouldReconnect && connectedDevice != null) {
-                    startReconnectSequence();
+                    scheduleReconnect();
                 }
 
-                // 断开连接时释放 WakeLock
                 if (wakeLock != null && wakeLock.isHeld()) {
                     wakeLock.release();
                     Log.d(TAG, "WakeLock released on disconnection.");
                 }
+            } else {
+                // Handle other connection states or errors
+                Log.e(TAG, "Connection state change error: status=" + status + ", newState=" + newState);
+                if (shouldReconnect && connectedDevice != null) {
+                    scheduleReconnect();
+                }
             }
-        } // Correctly closes onConnectionStateChange method
+        }
         
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
@@ -357,27 +275,31 @@ public class BridgeService extends Service {
                     controlPointChar = ancsService.getCharacteristic(UUID.fromString(CHAR_CONTROL_POINT));
                     dataSourceChar = ancsService.getCharacteristic(UUID.fromString(CHAR_DATA_SOURCE));
                     
-                    // Check if all essential characteristics are found
                     if (notificationSourceChar != null && controlPointChar != null && dataSourceChar != null) {
-                        // 按照ANCS规范，先启用 Data Source 通知
                         setNotificationEnabled(dataSourceChar);
                         updateNotification("ANCS 服务已就绪");
                     } else {
                         Log.e(TAG, "One or more ANCS characteristics not found.");
                         updateNotification("ANCS 特性缺失");
-                        // Disconnect to trigger a full reconnection attempt.
-                        disconnect();
+                        if (shouldReconnect && connectedDevice != null) {
+                            disconnect(); // Disconnect to trigger a full reconnection attempt.
+                            scheduleReconnect();
+                        }
                     }
                 } else {
                     Log.e(TAG, "ANCS service not found.");
                     updateNotification("未找到 ANCS 服务");
-                    // Disconnect to trigger a full reconnection attempt.
-                    disconnect();
+                    if (shouldReconnect && connectedDevice != null) {
+                        disconnect(); // Disconnect to trigger a full reconnection attempt.
+                        scheduleReconnect();
+                    }
                 }
             } else {
                 Log.e(TAG, "Service discovery failed with status: " + status);
-                // Disconnect to trigger a full reconnection attempt.
-                disconnect();
+                if (shouldReconnect && connectedDevice != null) {
+                    disconnect(); // Disconnect to trigger a full reconnection attempt.
+                    scheduleReconnect();
+                }
             }
         }
         
@@ -385,7 +307,6 @@ public class BridgeService extends Service {
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (descriptor.getCharacteristic().getUuid().equals(UUID.fromString(CHAR_DATA_SOURCE))) {
-                    // Data Source 启用后，启用 Notification Source
                     setNotificationEnabled(notificationSourceChar);
                 } else if (descriptor.getCharacteristic().getUuid().equals(UUID.fromString(CHAR_NOTIFICATION_SOURCE))) {
                     Log.i(TAG, "ANCS notifications enabled");
@@ -397,8 +318,10 @@ public class BridgeService extends Service {
                 }
             } else {
                 Log.e(TAG, "Descriptor write failed with status: " + status);
-                // Disconnect to trigger a full reconnection attempt.
-                disconnect();
+                if (shouldReconnect && connectedDevice != null) {
+                    disconnect(); // Disconnect to trigger a full reconnection attempt.
+                    scheduleReconnect();
+                }
             }
         }
         

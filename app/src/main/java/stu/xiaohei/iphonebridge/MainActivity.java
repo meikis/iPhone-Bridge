@@ -86,7 +86,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView mDeviceInfoText;
     private Button mScanButton;
     private Button mConnectButton;
-    private Button mAutoConnectButton;
+    
     private ListView mNotificationList;
     private NotificationAdapter mNotificationAdapter;
     
@@ -184,7 +184,7 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         updateStatus(connected ? "已连接" : "已断开");
                         mConnectButton.setText(connected ? "断开连接" : "连接设备");
-                        mAutoConnectButton.setEnabled(true); // Re-enable auto-connect button
+                        
                     });
                 }
                 
@@ -267,7 +267,6 @@ public class MainActivity extends AppCompatActivity {
         mDeviceInfoText = findViewById(R.id.deviceInfoText);
         mScanButton = findViewById(R.id.scanButton);
         mConnectButton = findViewById(R.id.connectButton);
-        mAutoConnectButton = findViewById(R.id.autoConnectButton);
         mNotificationList = findViewById(R.id.notificationList);
         
         mNotificationAdapter = new NotificationAdapter(this);
@@ -277,13 +276,6 @@ public class MainActivity extends AppCompatActivity {
         
         mScanButton.setOnClickListener(v -> startScan());
         mConnectButton.setOnClickListener(v -> toggleConnection());
-        mAutoConnectButton.setOnClickListener(v -> {
-            if (mServiceBound && mBridgeService != null) {
-                mBridgeService.startAutoReconnect();
-                updateStatus("正在尝试自动连接...");
-                mAutoConnectButton.setEnabled(false); // Disable button immediately
-            }
-        });
         
         mNotificationList.setOnItemClickListener((parent, view, position, id) -> {
             NotificationItem item = mNotificationAdapter.getItem(position);
@@ -365,14 +357,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
-    private void autoConnectLastDevice() {
-        if (mServiceBound && mBridgeService != null) {
-            mBridgeService.startAutoReconnect();
-            updateStatus("正在尝试自动连接...");
-        } else {
-            Toast.makeText(this, "服务未就绪", Toast.LENGTH_SHORT).show();
-        }
-    }
+    
     
     private void checkPermissions() {
         List<String> permissions = new ArrayList<>();
@@ -487,7 +472,7 @@ public class MainActivity extends AppCompatActivity {
             
             // 使用更智能的扫描设置
             ScanSettings settings = new ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
                 .build();
             
             mBluetoothLeScanner.startScan(null, settings, mScanCallback);
@@ -655,11 +640,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // 当Activity回到前台时，尝试自动连接
-        if (mServiceBound && mBridgeService != null) {
-            mBridgeService.startAutoReconnect();
-            updateStatus("应用回到前台，正在尝试自动连接...");
-        }
+        // 当Activity回到前台时，不需要额外操作，服务会自行处理连接
     }
 
     @Override
