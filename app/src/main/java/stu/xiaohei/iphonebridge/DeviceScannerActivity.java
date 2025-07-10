@@ -97,7 +97,7 @@ public class DeviceScannerActivity extends AppCompatActivity {
         mProgressBar.setVisibility(View.VISIBLE);
         
         ScanSettings settings = new ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
             .build();
             
         mBluetoothLeScanner.startScan(null, settings, mScanCallback);

@@ -38,6 +38,9 @@ public class BridgeService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final String PREFS_NAME = "iPhoneBridgePrefs";
     private static final String PREF_LAST_DEVICE = "lastConnectedDevice";
+    private static final String PREF_RECONNECT_DELAY = "reconnectDelay";
+    private static final long INITIAL_RECONNECT_DELAY_MS = TimeUnit.SECONDS.toMillis(15);
+    private static final long MAX_RECONNECT_DELAY_MS = TimeUnit.MINUTES.toMillis(15);
     public static final String ACTION_RECONNECT = "stu.xiaohei.iphonebridge.ACTION_RECONNECT";
     public static final String EXTRA_DEVICE_ADDRESS = "extra_device_address";
     
@@ -65,8 +68,7 @@ public class BridgeService extends Service {
     private boolean shouldReconnect = false;
     private SharedPreferences sharedPreferences;
     
-    // 电源管理
-    private PowerManager.WakeLock wakeLock;
+    
     
     public interface ServiceCallback {
         void onConnectionStateChanged(boolean connected);
@@ -104,9 +106,7 @@ public class BridgeService extends Service {
             sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             shouldReconnect = sharedPreferences.getBoolean("shouldReconnect", false);
             
-            // 初始化电源管理
-            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "iPhoneBridge::ServiceWakeLock");
+            
             
             createNotificationChannel();
             startForeground(NOTIFICATION_ID, createNotification());
@@ -143,9 +143,7 @@ public class BridgeService extends Service {
     public void onDestroy() {
         Log.d(TAG, "Service destroyed");
         
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
-        }
+        
         
         WorkManager.getInstance(this).cancelAllWorkByTag("reconnect");
         disconnect();
@@ -211,17 +209,23 @@ public class BridgeService extends Service {
         }
         updateNotification("正在尝试重新连接...");
 
+        long currentDelay = sharedPreferences.getLong(PREF_RECONNECT_DELAY, INITIAL_RECONNECT_DELAY_MS);
+
         Data inputData = new Data.Builder()
             .putString(ReconnectWorker.KEY_DEVICE_ADDRESS, connectedDevice.getAddress())
             .build();
 
         OneTimeWorkRequest reconnectWorkRequest = new OneTimeWorkRequest.Builder(ReconnectWorker.class)
             .setInputData(inputData)
-            .setInitialDelay(15, TimeUnit.SECONDS)
+            .setInitialDelay(currentDelay, TimeUnit.MILLISECONDS)
             .addTag("reconnect")
             .build();
 
         WorkManager.getInstance(this).enqueue(reconnectWorkRequest);
+
+        // Calculate the next delay, doubling it up to the max
+        long nextDelay = Math.min(currentDelay * 2, MAX_RECONNECT_DELAY_MS);
+        sharedPreferences.edit().putLong(PREF_RECONNECT_DELAY, nextDelay).apply();
     }
     
     public boolean isConnected() {
@@ -253,11 +257,9 @@ public class BridgeService extends Service {
                 
                 updateNotification("已连接到 iPhone");
                 WorkManager.getInstance(BridgeService.this).cancelAllWorkByTag("reconnect");
+                sharedPreferences.edit().putLong(PREF_RECONNECT_DELAY, INITIAL_RECONNECT_DELAY_MS).apply();
 
-                if (wakeLock != null && !wakeLock.isHeld()) {
-                    wakeLock.acquire();
-                    Log.d(TAG, "WakeLock acquired on connection.");
-                }
+                
                 
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "Disconnected from GATT server");
@@ -275,10 +277,7 @@ public class BridgeService extends Service {
                     scheduleReconnect();
                 }
 
-                if (wakeLock != null && wakeLock.isHeld()) {
-                    wakeLock.release();
-                    Log.d(TAG, "WakeLock released on disconnection.");
-                }
+                
             } else {
                 // Handle other connection states or errors
                 Log.e(TAG, "Connection state change error: status=" + status + ", newState=" + newState);
