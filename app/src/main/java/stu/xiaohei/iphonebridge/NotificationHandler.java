@@ -337,7 +337,7 @@ public class NotificationHandler {
         executorService.execute(() -> notificationDao.deleteNotificationByUid(uid));
     }
 
-    public List<NotificationEntity> getAllNotifications() {
+    public LiveData<List<NotificationEntity>> getAllNotifications() {
         return notificationDao.getAllNotifications();
     }
 
