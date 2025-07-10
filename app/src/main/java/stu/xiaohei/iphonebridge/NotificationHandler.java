@@ -2,21 +2,18 @@ package stu.xiaohei.iphonebridge;
 
 import android.util.Log;
 
-import android.util.Log;
-
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.lang.reflect.Type;
+import android.content.Context;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
+import stu.xiaohei.iphonebridge.database.NotificationDao;
+import stu.xiaohei.iphonebridge.database.NotificationDatabase;
+import stu.xiaohei.iphonebridge.database.NotificationEntity;
 
 public class NotificationHandler {
     private static final String TAG = "NotificationHandler";
@@ -66,14 +63,12 @@ public class NotificationHandler {
     public static final byte ACTION_ID_POSITIVE = 0;
     public static final byte ACTION_ID_NEGATIVE = 1;
     
-    private Map<String, NotificationInfo> notifications = new HashMap<>();
-    private Map<String, ByteBuffer> pendingDataBuffers = new HashMap<>();
-    private File storageFile;
-    private Gson gson = new Gson();
+    private NotificationDao notificationDao;
+    private ExecutorService executorService;
 
-    public NotificationHandler(File storageFile) {
-        this.storageFile = storageFile;
-        loadNotifications();
+    public NotificationHandler(Context context) {
+        notificationDao = NotificationDatabase.getDatabase(context).notificationDao();
+        executorService = Executors.newSingleThreadExecutor();
     }
     
     public static class NotificationInfo {
@@ -129,8 +124,14 @@ public class NotificationHandler {
         info.hasPositiveAction = (eventFlags & EVENT_FLAG_POSITIVE_ACTION) != 0;
         info.hasNegativeAction = (eventFlags & EVENT_FLAG_NEGATIVE_ACTION) != 0;
         
-        notifications.put(uid, info);
-        saveNotifications();
+        // Save to database
+        NotificationEntity entity = new NotificationEntity(
+            info.uid, info.eventId, info.categoryId, info.eventFlags, 
+            info.appId, info.title, info.subtitle, info.message, info.date,
+            info.positiveActionLabel, info.negativeActionLabel,
+            info.hasPositiveAction, info.hasNegativeAction, info.timestamp
+        );
+        executorService.execute(() -> notificationDao.insertNotification(entity));
         
         Log.d(TAG, "Parsed notification: " + info.getFormattedInfo());
         return info;
@@ -148,23 +149,48 @@ public class NotificationHandler {
         
         Log.d(TAG, "Parsing data source for UID: " + uid + ", command: " + (commandId & 0xFF) + ", length: " + data.length);
         
-        NotificationInfo info = notifications.get(uid);
-        if (info == null) {
-            Log.w(TAG, "Notification not found for UID: " + uid + ", creating new one");
-            info = new NotificationInfo(uid);
-            notifications.put(uid, info);
-        }
-        
-        if (commandId == COMMAND_ID_GET_NOTIFICATION_ATTRIBUTES) {
-            // 直接解析属性数据，从第5个字节开始
-            if (data.length > 5) {
-                parseNotificationAttributes(data, 5, info);
-                Log.d(TAG, "Updated notification info: " + info.getFormattedInfo());
-                saveNotifications(); // Save changes after updating attributes
+        executorService.execute(() -> {
+            NotificationEntity entity = notificationDao.getNotificationByUid(uid);
+            NotificationInfo info;
+            if (entity == null) {
+                Log.w(TAG, "Notification not found for UID: " + uid + ", creating new one");
+                info = new NotificationInfo(uid);
             } else {
-                Log.w(TAG, "No attribute data to parse");
+                info = new NotificationInfo(entity.uid);
+                info.eventId = entity.eventId;
+                info.categoryId = entity.categoryId;
+                info.eventFlags = entity.eventFlags;
+                info.appId = entity.appId;
+                info.title = entity.title;
+                info.subtitle = entity.subtitle;
+                info.message = entity.message;
+                info.date = entity.date;
+                info.positiveActionLabel = entity.positiveActionLabel;
+                info.negativeActionLabel = entity.negativeActionLabel;
+                info.hasPositiveAction = entity.hasPositiveAction;
+                info.hasNegativeAction = entity.hasNegativeAction;
+                info.timestamp = entity.timestamp;
             }
-        }
+            
+            if (commandId == COMMAND_ID_GET_NOTIFICATION_ATTRIBUTES) {
+                // 直接解析属性数据，从第5个字节开始
+                if (data.length > 5) {
+                    parseNotificationAttributes(data, 5, info);
+                    Log.d(TAG, "Updated notification info: " + info.getFormattedInfo());
+                    
+                    // Update in database
+                    NotificationEntity updatedEntity = new NotificationEntity(
+                        info.uid, info.eventId, info.categoryId, info.eventFlags, 
+                        info.appId, info.title, info.subtitle, info.message, info.date,
+                        info.positiveActionLabel, info.negativeActionLabel,
+                        info.hasPositiveAction, info.hasNegativeAction, info.timestamp
+                    );
+                    notificationDao.insertNotification(updatedEntity); // insert will replace if UID exists
+                } else {
+                    Log.w(TAG, "No attribute data to parse");
+                }
+            }
+        });
     }
     
     private void parseNotificationAttributes(byte[] data, int offset, NotificationInfo info) {
@@ -286,55 +312,44 @@ public class NotificationHandler {
     }
     
     public NotificationInfo getNotification(String uid) {
-        return notifications.get(uid);
+        NotificationEntity entity = notificationDao.getNotificationByUid(uid);
+        if (entity != null) {
+            NotificationInfo info = new NotificationInfo(entity.uid);
+            info.eventId = entity.eventId;
+            info.categoryId = entity.categoryId;
+            info.eventFlags = entity.eventFlags;
+            info.appId = entity.appId;
+            info.title = entity.title;
+            info.subtitle = entity.subtitle;
+            info.message = entity.message;
+            info.date = entity.date;
+            info.positiveActionLabel = entity.positiveActionLabel;
+            info.negativeActionLabel = entity.negativeActionLabel;
+            info.hasPositiveAction = entity.hasPositiveAction;
+            info.hasNegativeAction = entity.hasNegativeAction;
+            info.timestamp = entity.timestamp;
+            return info;
+        }
+        return null;
     }
     
     public void removeNotification(String uid) {
-        notifications.remove(uid);
-        saveNotifications();
+        executorService.execute(() -> notificationDao.deleteNotificationByUid(uid));
     }
 
-    public Map<String, NotificationInfo> getAllNotifications() {
-        return notifications;
+    public List<NotificationEntity> getAllNotifications() {
+        return notificationDao.getAllNotifications();
     }
 
     public void clearAllNotifications() {
-        notifications.clear();
-        saveNotifications();
+        executorService.execute(() -> notificationDao.deleteAllNotifications());
         Log.d(TAG, "All notifications cleared.");
     }
 
     public void clearOldNotifications(int days) {
         long cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days);
-        boolean changed = notifications.entrySet().removeIf(entry -> entry.getValue().timestamp < cutoff);
-        if (changed) {
-            saveNotifications();
-            Log.d(TAG, "Cleared notifications older than " + days + " days.");
-        }
-    }
-
-    private void saveNotifications() {
-        try (FileWriter writer = new FileWriter(storageFile)) {
-            gson.toJson(notifications, writer);
-            Log.d(TAG, "Notifications saved to " + storageFile.getAbsolutePath());
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving notifications", e);
-        }
-    }
-
-    private void loadNotifications() {
-        if (storageFile.exists()) {
-            try (FileReader reader = new FileReader(storageFile)) {
-                Type type = new TypeToken<HashMap<String, NotificationInfo>>(){}.getType();
-                notifications = gson.fromJson(reader, type);
-                if (notifications == null) {
-                    notifications = new HashMap<>();
-                }
-                Log.d(TAG, "Notifications loaded from " + storageFile.getAbsolutePath());
-            } catch (IOException e) {
-                Log.e(TAG, "Error loading notifications", e);
-            }
-        }
+        executorService.execute(() -> notificationDao.deleteOldNotifications(cutoff));
+        Log.d(TAG, "Cleared notifications older than " + days + " days.");
     }
     
     public static String getCategoryName(byte categoryId) {

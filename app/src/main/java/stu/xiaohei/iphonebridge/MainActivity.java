@@ -95,10 +95,6 @@ public class MainActivity extends AppCompatActivity {
     private static final long SCAN_PERIOD = 10000;
     
     private List<NotificationItem> mNotifications = new ArrayList<>();
-    private NotificationHandler mNotificationHandler;
-
-    // In onCreate or initViews, after context is available
-    // mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
     
     // 通知项数据类
     public static class NotificationItem {
@@ -218,7 +214,7 @@ public class MainActivity extends AppCompatActivity {
             registerBondReceiver();
             requestBatteryOptimizationWhitelist();
             
-            mNotificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
+            
 
             // 检查是否从通知启动并带有设备地址
             try {
@@ -272,7 +268,7 @@ public class MainActivity extends AppCompatActivity {
         mNotificationAdapter = new NotificationAdapter(this);
         mNotificationList.setAdapter(mNotificationAdapter);
 
-        loadInitialNotifications();
+        
         
         mScanButton.setOnClickListener(v -> startScan());
         mConnectButton.setOnClickListener(v -> toggleConnection());
@@ -677,6 +673,10 @@ public class MainActivity extends AppCompatActivity {
                 mNotificationAdapter.notifyDataSetChanged();
                 Toast.makeText(this, "所有通知已清空", Toast.LENGTH_SHORT).show();
             }
+            return true;
+        } else if (item.getItemId() == R.id.action_notification_history) {
+            Intent intent = new Intent(MainActivity.this, NotificationHistoryActivity.class);
+            startActivity(intent);
             return true;
         }
         return super.onOptionsItemSelected(item);

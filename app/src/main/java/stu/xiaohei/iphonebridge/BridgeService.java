@@ -102,7 +102,7 @@ public class BridgeService extends Service {
                 return;
             }
             
-            notificationHandler = new NotificationHandler(new File(getFilesDir(), "notifications.json"));
+            notificationHandler = new NotificationHandler(getApplicationContext());
             sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             shouldReconnect = sharedPreferences.getBoolean("shouldReconnect", false);
             

@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
+        android:id="@+id/action_notification_history"
+        android:title="通知历史"
+        android:icon="@android:drawable/ic_menu_recent_history" />
+    <item
         android:id="@+id/action_clear_notifications"
         android:title="一键清空通知"
         android:icon="@android:drawable/ic_menu_delete" />

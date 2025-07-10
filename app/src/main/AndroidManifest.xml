@@ -60,6 +60,12 @@
             android:name=".NotificationDetailActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
+
+        <!-- 通知历史活动 -->
+        <activity
+            android:name=".NotificationHistoryActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
         
         <!-- 桥接服务 -->
         <service
