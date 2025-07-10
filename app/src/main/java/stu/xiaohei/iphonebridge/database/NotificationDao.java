@@ -13,7 +13,7 @@ public interface NotificationDao {
     void insertNotification(NotificationEntity notification);
 
     @Query("SELECT * FROM notifications ORDER BY timestamp DESC")
-    List<NotificationEntity> getAllNotifications();
+    LiveData<List<NotificationEntity>> getAllNotifications();
 
     @Query("SELECT * FROM notifications WHERE uid = :uid LIMIT 1")
     NotificationEntity getNotificationByUid(String uid);

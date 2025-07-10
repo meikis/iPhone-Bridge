@@ -312,25 +312,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void loadInitialNotifications() {
-        if (mNotificationHandler != null) {
-            Map<String, NotificationHandler.NotificationInfo> loadedNotifications = mNotificationHandler.getAllNotifications();
-            if (loadedNotifications != null && !loadedNotifications.isEmpty()) {
-                List<NotificationHandler.NotificationInfo> sortedNotifications = new ArrayList<>(loadedNotifications.values());
-                // Sort by timestamp, newest first
-                Collections.sort(sortedNotifications, (o1, o2) -> Long.compare(o2.timestamp, o1.timestamp));
-
-                for (NotificationHandler.NotificationInfo info : sortedNotifications) {
-                    addNotificationToList(info);
-                }
-                updateStatus("已加载 " + loadedNotifications.size() + " 条历史通知");
-            } else {
-                updateStatus("没有历史通知");
-            }
-        } else {
-            Log.e(TAG, "NotificationHandler not initialized when loading initial notifications");
-        }
-    }
+    
     
     private void updateDeviceInfo(BluetoothDevice device) {
         if (device == null) {
